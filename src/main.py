@@ -13,7 +13,7 @@ from utils import get_response, find_tag
 
 
 def whats_new(session):
-    results = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор'),]
+    results = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор'), ]
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
     response = get_response(session, whats_new_url)
     if response is None:
