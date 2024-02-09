@@ -6,7 +6,7 @@ import requests_cache
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
-from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL
+from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL, EXPECTED_STATUS
 from configs import configure_argument_parser, configure_logging
 from outputs import control_output
 from utils import get_response, find_tag
@@ -103,13 +103,7 @@ def download(session):
 
 
 def pep(session):
-    result = [('Статус', 'Количество')]
-    response = get_response(session, PEP_URL)
-    if response is None:
-        return
-
-    soup = BeautifulSoup(response.text, 'lxml')
-    table_wrappers = soup.find_all('table', class_='pep-zero-table')
+    results = [('Статус', 'Количество')]
     peps = {
         'Active': 0,
         'Accepted': 0,
@@ -122,23 +116,37 @@ def pep(session):
         'Draft': 0,
         'Total': 0
     }
+    response = get_response(session, PEP_URL)
+    if response is None:
+        return
 
-    for table in table_wrappers:
-        tr_tags = table.find_all('tr')
-        for tr in tr_tags:
-            abbr_tag = tr.find('td').find('abbr') if tr.find('td') else None
-            title_value = abbr_tag.get('title') if abbr_tag else None
+    soup = BeautifulSoup(response.text, 'lxml')
+    section_tag = find_tag(soup, 'section', attrs={'id': 'numerical-index'})
+    tr_tags = find_tag(section_tag, 'tbody').find_all('tr')
 
-            if title_value:
-                title_values = title_value.split(',')
-                for value in title_values[1:]:
-                    value = value.strip()
-                    if value in peps:
-                        peps[value] += 1
-                        peps['Total'] += 1
+    for tr in tqdm(tr_tags):
+        table_status = EXPECTED_STATUS[find_tag(tr, 'abbr').text[1:]]
+        pep_link = find_tag(tr, 'a')['href']
+        pep_page = urljoin(PEP_URL, pep_link)
+        response = get_response(session, pep_page)
+        soup = BeautifulSoup(response.text, 'lxml')
+        dl_tag = find_tag(soup, 'dl')
+        page_status = dl_tag.find(string='Status').find_next('dd').string
+
+        if page_status not in table_status:
+            logging.warning(
+                f'{pep_page}\n'
+                f'Статус в карточке: {page_status}\n'
+                f'Ожидаемые статусы: {table_status}\n'
+            )
+            continue
+        peps[page_status] += 1
+        peps['Total'] += 1
+
     for status, count in peps.items():
-        result.append((status, count))
-    return result
+        results.append((status, count))
+
+    return results
 
 
 MODE_TO_FUNCTION = {
